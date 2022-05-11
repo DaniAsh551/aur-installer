@@ -1,0 +1,103 @@
+#!/bin/bash
+
+##Store current directory
+CD=`pwd`
+
+##Colors
+BLACK=30
+RED=31
+GREEN=32
+YELLOW=33
+BLUE=34
+DEFAULT="\033[0m"
+
+##Allow printing easily with color
+function printc(){
+    printf "\033[0;${1}m${*:2}${DEFAULT_COLOR}\n"
+}
+
+##Read from pipe
+function read_from_pipe() {
+    cat -;
+}
+
+##Disallow root
+if [ "$EUID" -eq 0 ]
+  then printc $RED "Please run as a non-root user."
+  exit
+fi
+
+PACKAGES=$@
+
+##If packages ar not provided as arguments, check pipe
+if [ -z "$PACKAGES" ] || [ "$PACKAGES" == "" ] || [ "$PACKAGES" == " " ]; then
+    PACKAGES=`read_from_pipe | awk '{print}' ORS=' '`
+fi
+
+##Check if any packages are given
+if [ -z "$PACKAGES" ] || [ "$PACKAGES" == "" ] || [ "$PACKAGES" == " " ]; then
+    printc $RED Please provide a space-seperated list of packages to update/install.
+    exit 1
+fi
+
+A_PACKAGES=($PACKAGES)
+
+##Check if git exists
+command -v git 2>&1>/dev/null
+
+GIT_EXISTS=$?
+
+if [ $GIT_EXISTS -ne 0 ]; then
+    printc $RED git is required.
+    exit 2
+fi
+
+printc $BLUE "Attempting to install/update ${#A_PACKAGES[@]} packages:"
+printc $BLUE "  $PACKAGES"
+printf "\n"
+
+PACKAGES_DIR=`mktemp -d -t au-pkgs_XXX`
+PACMAN_PKGS=""
+CLEANUP_DIRS=""
+FAILED_PKGS=""
+
+for PKG in $PACKAGES; do
+    GIT_URI="https://aur.archlinux.org/${PKG}.git"
+    PKG_EXISTS=$(git ls-remote "$GIT_URI" 2>/dev/null)
+
+    if [ "$PKG_EXISTS" == "" ]; then
+        printc $YELLOW "[${PKG}] This package does not exist on aur. Falling back to pacman. This would be installed at the end."
+        PACMAN_PKGS="${PACMAN_PKGS} ${PKG}"
+    else
+        PKG_DIR=`mktemp -d -t au-pkg_XXXX`
+        mkdir -p $PKG_DIR
+        printc $BLUE "[${PKG}] Fething PKGBUILD sources..."
+        git clone --depth=1 $GIT_URI $PWD
+        printc $BLUE "[${PKG}] Moving to $PKG_DIR"
+        cd $PKG_DIR
+
+        yes | makepkg -s
+
+        if [ $? -eq 0 ]; then
+            cp ./*.pkg.* $PACKAGES_DIR
+            printc $GREEN "[${PKG}] Built successfully. Installation has been deferred to the end."
+            printc $BLUE "[${PKG}] Moving out of $PKG_DIR directory. The directory will be removed later."
+            cd $CD
+            CLEANUP_DIRS="${CLEANUP_DIRS} ${PKG_DIR}"
+        else
+            printc $RED "[${PKG}] Failed to build."
+        fi
+    fi
+done
+
+printc $BLUE "Installing pacman packages..."
+sudo pacman -Sy --noconfirm${PACMAN_PKGS}
+
+if [ ! -z `ls $PACKAGES_DIR` ]; then
+    printc $BLUE "Installing AUR packages..."
+    sudo sh -c "pacman -U --noconfirm $PACKAGES_DIR\*"
+fi
+
+##Cleanup
+printc $BLUE "Cleaning up..."
+sudo rm -rf $CLEANUP_DIR
