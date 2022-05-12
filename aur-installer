@@ -56,7 +56,7 @@ printc $BLUE "Attempting to install/update ${#A_PACKAGES[@]} packages:"
 printc $BLUE "  $PACKAGES"
 printf "\n"
 
-PACKAGES_DIR=`mktemp -d -t au-pkgs_XXX`
+PACKAGES_DIR="$(mktemp -d -t au-pkgs_XXX)"
 PACMAN_PKGS=""
 CLEANUP_DIRS=""
 FAILED_PKGS=""
@@ -69,10 +69,10 @@ for PKG in $PACKAGES; do
         printc $YELLOW "[${PKG}] This package does not exist on aur. Falling back to pacman. This would be installed at the end."
         PACMAN_PKGS="${PACMAN_PKGS} ${PKG}"
     else
-        PKG_DIR=`mktemp -d -t au-pkg_XXXX`
+        PKG_DIR="$(mktemp -d -t au-${PKG}_XXXX)"
         mkdir -p $PKG_DIR
         printc $BLUE "[${PKG}] Fething PKGBUILD sources..."
-        git clone --depth=1 $GIT_URI $PWD
+        git clone --depth=1 $GIT_URI $PKG_DIR
         printc $BLUE "[${PKG}] Moving to $PKG_DIR"
         cd $PKG_DIR
 
